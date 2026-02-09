@@ -3,42 +3,48 @@ from markitdown import MarkItDown
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from collections import Counter
 import os
-from sentence_transformers import SentenceTransformer
+import get_model
 import chromadb
 
-#Получение пути к документу
+#Получение пути к документам
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
-filename = "metod_ukazaniya_po_oformleniyu_vkr_0.docx"
+model = get_model.Model.get_instance()
 output_folder = os.path.join(parent_dir, 'documents')
-file_path = Path(output_folder) / filename
+files_in_documents = list(Path(output_folder).glob('*'))
 
-#Обработка документа для чанкирования
+# Чанкирование и подготовка данных
 md = MarkItDown()
-result = md.convert(file_path)
-content = result.text_content
-
-processed_document = {
-    'source': file_path,
-    'content': content
-}
-
-documents = [processed_document]
-print(f"Document ready: {len(processed_document['content']):,} characters")
-
-#Чанкирование
 text_splitter = RecursiveCharacterTextSplitter(
     chunk_size=450,
     chunk_overlap=90,
     separators=["\n\n", "\n", ". ", " ", ""]
 )
-def process_document(doc, text_splitter):
+
+def process_document(file_path):
+    result = md.convert(file_path)
+    content = result.text_content
+    processed_doc = {'source': file_path, 'content': content}
+    return processed_doc
+
+def split_into_chunks(doc, text_splitter):
     doc_chunks = text_splitter.split_text(doc["content"])
     return [{"content": chunk, "source": doc["source"]} for chunk in doc_chunks]
 
+all_processed_docs = []
+for file_path in files_in_documents:
+    try:
+        print(f"Processing document: {file_path} ...")
+        proc_doc = process_document(file_path)
+        print(f"Document processed: {proc_doc['source'].name}")
+        all_processed_docs.append(proc_doc)
+    except Exception as e:
+        print(f"Error processing {file_path}: {e}")
+
 all_chunks = []
-for doc in documents:
-    doc_chunks = process_document(doc, text_splitter)
+previous_chunks_num = 0
+for doc in all_processed_docs:
+    doc_chunks = split_into_chunks(doc, text_splitter)
     all_chunks.extend(doc_chunks)
 
 source_counts = Counter(chunk["source"] for chunk in all_chunks)
@@ -46,11 +52,11 @@ chunk_lengths = [len(chunk["content"]) for chunk in all_chunks]
 
 print(f"Total chunks created: {len(all_chunks)}")
 print(f"Chunk length: {min(chunk_lengths)}-{max(chunk_lengths)} characters")
-print(f"Source document: {Path(documents[0]['source']).name}")
 
+documents = [chunk["content"] for chunk in all_chunks]
 
 # Получение эмбеддингов
-model = SentenceTransformer('multi-qa-mpnet-base-dot-v1')
+model = get_model.Model.get_instance()
 
 documents = [chunk["content"] for chunk in all_chunks]
 embeddings = model.encode(documents)
@@ -60,7 +66,8 @@ print(f"  - Embeddings shape: {embeddings.shape}")
 print(f"  - Vector dimensions: {embeddings.shape[1]}")
 
 #Построение базы знаний (ChromaDB)
-client = chromadb.PersistentClient(path="./chroma_db")
+root_project = Path(__file__).absolute().parents[1]
+client = chromadb.PersistentClient(path=root_project / "chroma_db")
 
 collection = client.get_or_create_collection(
     name="style_manual_coursework_final_qualifying_work",

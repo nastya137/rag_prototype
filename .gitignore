@@ -1,0 +1,6 @@
+model/
+chroma_db/
+documents/*.pdf
+documents/*.docx
+__pycache__/
+*.pyc

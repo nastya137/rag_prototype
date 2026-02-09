@@ -1,12 +1,14 @@
 import chromadb
-from sentence_transformers import SentenceTransformer
 from langchain_ollama import OllamaLLM
 from langchain_core.prompts import PromptTemplate
 import time
+import get_model
+import pathlib
 
-client = chromadb.PersistentClient(path="./chroma_db")
+root_project = pathlib.Path(__file__).absolute().parents[1]
+client = chromadb.PersistentClient(path=root_project / "chroma_db")
+model = get_model.Model.get_instance()
 collection = client.get_collection(name="style_manual_coursework_final_qualifying_work")
-model = SentenceTransformer('multi-qa-mpnet-base-dot-v1')
 llm = OllamaLLM(model="llama3.2:latest", temperature=0.1)
 
 # Шаблон запроса
@@ -22,7 +24,6 @@ Question: {question}
 Answer (уточняй, приводи конкретные цифры и значения, когда это возможно):"""
 )
 
-# Цепочка обработки вопросов
 chain = prompt_template | llm
 
 def format_query_results(question, query_embedding, documents, metadatas):
@@ -81,10 +82,13 @@ def stream_llm_answer(question, context):
     for chunk in chain.stream({"context": context[:2000], "question": question}):
         yield getattr(chunk, "content", str(chunk))
 
+question = ""
 
 while(True):
     #Пример: "Допускается ли вписывать в текст выпускной квалификационной работы и курсового проекта отдельные слова, формулы и условные знаки?"
     question = input("\nВведите вопрос: ")
+    if (question=="стоп"):
+        break
     context, documents = retrieve_context(question, n_results=3)
     print("Ответ: ", end="", flush=True)
 
