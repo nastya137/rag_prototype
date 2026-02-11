@@ -16,8 +16,8 @@ files_in_documents = list(Path(output_folder).glob('*'))
 # Чанкирование и подготовка данных
 md = MarkItDown()
 text_splitter = RecursiveCharacterTextSplitter(
-    chunk_size=450,
-    chunk_overlap=90,
+    chunk_size=500,
+    chunk_overlap=100,
     separators=["\n\n", "\n", ". ", " ", ""]
 )
 
@@ -34,12 +34,12 @@ def split_into_chunks(doc, text_splitter):
 all_processed_docs = []
 for file_path in files_in_documents:
     try:
-        print(f"Processing document: {file_path} ...")
+        print(f"Обработка документа: {file_path} ...")
         proc_doc = process_document(file_path)
-        print(f"Document processed: {proc_doc['source'].name}")
+        print(f"Документ обработан: {proc_doc['source'].name}")
         all_processed_docs.append(proc_doc)
     except Exception as e:
-        print(f"Error processing {file_path}: {e}")
+        print(f"Ошибка обработки: {file_path}: {e}")
 
 all_chunks = []
 previous_chunks_num = 0
@@ -50,32 +50,33 @@ for doc in all_processed_docs:
 source_counts = Counter(chunk["source"] for chunk in all_chunks)
 chunk_lengths = [len(chunk["content"]) for chunk in all_chunks]
 
-print(f"Total chunks created: {len(all_chunks)}")
-print(f"Chunk length: {min(chunk_lengths)}-{max(chunk_lengths)} characters")
+print(f"Всего создано чанков: {len(all_chunks)}")
+print(f"Размер чанков: {min(chunk_lengths)}-{max(chunk_lengths)} символов")
 
 documents = [chunk["content"] for chunk in all_chunks]
 
 # Получение эмбеддингов
+print(f"Генерация эмбеддингов...")
 model = get_model.Model.get_instance()
 
 documents = [chunk["content"] for chunk in all_chunks]
 embeddings = model.encode(documents)
 
-print(f"Embedding generation results:")
-print(f"  - Embeddings shape: {embeddings.shape}")
-print(f"  - Vector dimensions: {embeddings.shape[1]}")
+print(f"Результат генерации эмбеддингов:")
+print(f"  - Форма эмбеддинга: {embeddings.shape}")
+print(f"  - Измерений векторов: {embeddings.shape[1]}")
 
 #Построение базы знаний (ChromaDB)
 root_project = Path(__file__).absolute().parents[1]
 client = chromadb.PersistentClient(path=root_project / "chroma_db")
 
 collection = client.get_or_create_collection(
-    name="style_manual_coursework_final_qualifying_work",
-    metadata={"description": "Style manual for coursework and final qualifying work(KubSU, Faculty of Physics and Technology)"}
+    name="collection_1",
+    metadata={"description": "Тестовая коллекция"}
 )
 
-print(f"Created collection: {collection.name}")
-print(f"Collection ID: {collection.id}")
+print(f"Создана коллекция: {collection.name}")
+print(f"ID коллекции: {collection.id}")
 
 metadatas = [{"document": Path(chunk["source"]).name} for chunk in all_chunks]
 
