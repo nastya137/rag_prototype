@@ -53,13 +53,27 @@ chunk_lengths = [len(chunk["content"]) for chunk in all_chunks]
 print(f"Всего создано чанков: {len(all_chunks)}")
 print(f"Размер чанков: {min(chunk_lengths)}-{max(chunk_lengths)} символов")
 
-documents = [chunk["content"] for chunk in all_chunks]
+documents = []
+metadatas = []
+ids = []
+
+for doc_id, doc in enumerate(all_processed_docs):
+    doc_chunks = split_into_chunks(doc, text_splitter)
+
+    for chunk_id, chunk in enumerate(doc_chunks):
+        documents.append(chunk["content"])
+
+        metadatas.append({
+            "document": Path(chunk["source"]).name,
+            "doc_id": doc_id,
+            "chunk_id": chunk_id
+        })
+
+        ids.append(f"{doc_id}_{chunk_id}")
 
 # Получение эмбеддингов
 print(f"Генерация эмбеддингов...")
 model = get_model.Model.get_instance()
-
-documents = [chunk["content"] for chunk in all_chunks]
 embeddings = model.encode(documents)
 
 print(f"Результат генерации эмбеддингов:")
@@ -75,16 +89,22 @@ collection = client.get_or_create_collection(
     metadata={"description": "Тестовая коллекция"}
 )
 
+if collection.count() > 0:
+    print("Коллекция уже содержит данные. Пересоздание...")
+    client.delete_collection("collection_1")
+    collection = client.get_or_create_collection(
+        name="collection_1",
+        metadata={"description": "Тестовая коллекция"}
+    )
+
 print(f"Создана коллекция: {collection.name}")
 print(f"ID коллекции: {collection.id}")
-
-metadatas = [{"document": Path(chunk["source"]).name} for chunk in all_chunks]
 
 collection.add(
     documents=documents,
     embeddings=embeddings.tolist(),
     metadatas=metadatas,
-    ids=[f"doc_{i}" for i in range(len(documents))],
+    ids=ids
 )
 
 print(f"Collection count: {collection.count()}")
