@@ -3,7 +3,9 @@ from langchain_ollama import OllamaLLM
 from langchain_core.prompts import PromptTemplate
 import get_model
 import pathlib
+from sentence_transformers import CrossEncoder
 
+reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
 root_project = pathlib.Path(__file__).absolute().parents[1]
 client = chromadb.PersistentClient(path=root_project / "chroma_db")
 model = get_model.Model.get_instance()
@@ -50,24 +52,58 @@ def query_knowledge_base(question, n_results=5):
     metadatas = results["metadatas"][0]
     format_query_results(question, query_embedding, documents, metadatas)
 
-def retrieve_context(question, n_results=5):
+def retrieve_context(question, n_results=15, final_k=5, distance_threshold=0.65):
     query_embedding = model.encode([question])
+
     results = collection.query(
         query_embeddings=query_embedding.tolist(),
         n_results=n_results,
         include=["documents", "metadatas", "distances"]
     )
+
     documents = results["documents"][0]
     metadatas = results["metadatas"][0]
     distances = results["distances"][0]
+
+    # --- Шаг 1: фильтрация по distance ---
+    filtered = [
+        (doc, meta, dist)
+        for doc, meta, dist in zip(documents, metadatas, distances)
+        if dist < distance_threshold
+    ]
+
+    # если после фильтра мало результатов — берём исходные
+    if len(filtered) < final_k:
+        filtered = list(zip(documents, metadatas, distances))
+
+    filtered_docs = [item[0] for item in filtered]
+    filtered_metas = [item[1] for item in filtered]
+
+    # --- Шаг 2: reranking ---
+    pairs = [(question, doc) for doc in filtered_docs]
+    scores = reranker.predict(pairs)
+
+    ranked = sorted(
+        zip(filtered_docs, filtered_metas, scores),
+        key=lambda x: x[2],
+        reverse=True
+    )
+
+    top_chunks = ranked[:final_k]
+
+    # --- Сборка контекста ---
+    context_docs = [item[0] for item in top_chunks]
+
     chunks = []
-    for doc, meta, dist in zip(documents, metadatas, distances):
+    for doc, meta, score in top_chunks:
         chunks.append({
             "text": doc,
             "metadata": meta,
-            "distance": dist
+            "score": float(score)
         })
-    context = "\n\n---SECTION---\n\n".join(documents)
+
+    context = "\n\n---SECTION---\n\n".join(context_docs)
+
     return context, chunks
 
 def get_llm_answer(question, context):
@@ -79,11 +115,11 @@ def format_response(question, answer, source_chunks):
     response += "Источники:\n"
     for i, chunk in enumerate(source_chunks, 1):
         preview = chunk["text"][:300].replace("\n", " ") + "..."
-        distance = chunk["distance"]
+        score = chunk["score"]
         source = chunk["metadata"].get("document", "Unknown")
         response += (
             f"{i}. Источник: {source}\n"
-            f"   Distance: {distance:.4f}\n"
+            f"   Distance: {score:.4f}\n"
             f"   Текст: {preview}\n\n"
         )
     return response
