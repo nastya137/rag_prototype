@@ -1,17 +1,15 @@
 import chromadb
 from langchain_ollama import OllamaLLM
 from langchain_core.prompts import PromptTemplate
-import get_model
+from get_model import Model
 import pathlib
-from sentence_transformers import CrossEncoder
+from get_reranker import Reranker
 
 
 root_project = pathlib.Path(__file__).absolute().parents[1]
-reranker = CrossEncoder(
-    "cross-encoder/ms-marco-MiniLM-L-6-v2",
-    cache_folder=str(root_project /'model'))
+reranker = Reranker.get_instance()
 client = chromadb.PersistentClient(path=root_project / "chroma_db")
-model = get_model.Model.get_instance()
+model = Model.get_instance()
 collection = client.get_collection(name="collection_1")
 llm = OllamaLLM(model="llama3.2:latest", temperature=0.1)
 
