@@ -5,8 +5,11 @@ import get_model
 import pathlib
 from sentence_transformers import CrossEncoder
 
-reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+
 root_project = pathlib.Path(__file__).absolute().parents[1]
+reranker = CrossEncoder(
+    "cross-encoder/ms-marco-MiniLM-L-6-v2",
+    cache_folder=str(root_project /'model'))
 client = chromadb.PersistentClient(path=root_project / "chroma_db")
 model = get_model.Model.get_instance()
 collection = client.get_collection(name="collection_1")
@@ -119,7 +122,7 @@ def format_response(question, answer, source_chunks):
         source = chunk["metadata"].get("document", "Unknown")
         response += (
             f"{i}. Источник: {source}\n"
-            f"   Distance: {score:.4f}\n"
+            f"   Расстояние: {score:.4f}\n"
             f"   Текст: {preview}\n\n"
         )
     return response
