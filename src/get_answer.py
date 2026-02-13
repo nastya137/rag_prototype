@@ -68,40 +68,37 @@ def retrieve_context(question, n_results=15, final_k=5, distance_threshold=0.65)
     metadatas = results["metadatas"][0]
     distances = results["distances"][0]
 
-    # --- Шаг 1: фильтрация по distance ---
     filtered = [
         (doc, meta, dist)
         for doc, meta, dist in zip(documents, metadatas, distances)
         if dist < distance_threshold
     ]
 
-    # если после фильтра мало результатов — берём исходные
     if len(filtered) < final_k:
         filtered = list(zip(documents, metadatas, distances))
 
     filtered_docs = [item[0] for item in filtered]
     filtered_metas = [item[1] for item in filtered]
+    filtered_dists = [item[2] for item in filtered]
 
-    # --- Шаг 2: reranking ---
     pairs = [(question, doc) for doc in filtered_docs]
     scores = reranker.predict(pairs)
 
     ranked = sorted(
-        zip(filtered_docs, filtered_metas, scores),
+        zip(filtered_docs, filtered_metas, filtered_dists, scores),
         key=lambda x: x[2],
         reverse=True
     )
 
     top_chunks = ranked[:final_k]
-
-    # --- Сборка контекста ---
     context_docs = [item[0] for item in top_chunks]
 
     chunks = []
-    for doc, meta, score in top_chunks:
+    for doc, meta, dist, score in top_chunks:
         chunks.append({
             "text": doc,
             "metadata": meta,
+            "distance": float(dist),
             "score": float(score)
         })
 
@@ -122,7 +119,8 @@ def format_response(question, answer, source_chunks):
         source = chunk["metadata"].get("document", "Unknown")
         response += (
             f"{i}. Источник: {source}\n"
-            f"   Расстояние: {score:.4f}\n"
+            f"   Distance (Chroma): {chunk['distance']:.4f}\n"
+            f"   Score: {score:.4f}\n"
             f"   Текст: {preview}\n\n"
         )
     return response
