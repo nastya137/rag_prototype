@@ -1,0 +1,11 @@
+chromadb
+langchain
+langchain-core
+langchain-ollama
+langchain-text-splitters
+sentence-transformers
+markitdown
+torch
+pypdf
+python-docx
+
