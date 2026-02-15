@@ -84,7 +84,7 @@ def retrieve_context(question, n_results=15, final_k=5, distance_threshold=0.65)
 
     ranked = sorted(
         zip(filtered_docs, filtered_metas, filtered_dists, scores),
-        key=lambda x: x[2],
+        key=lambda x: x[3],
         reverse=True
     )
 
