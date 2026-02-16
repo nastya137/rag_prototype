@@ -16,8 +16,8 @@ files_in_documents = list(Path(output_folder).glob('*'))
 # Чанкирование и подготовка данных
 md = MarkItDown()
 text_splitter = RecursiveCharacterTextSplitter(
-    chunk_size=500,
-    chunk_overlap=100,
+    chunk_size=450,
+    chunk_overlap=90,
     separators=["\n\n", "\n", ". ", " ", ""]
 )
 
@@ -31,7 +31,14 @@ def split_into_chunks(doc, text_splitter):
     doc_chunks = text_splitter.split_text(doc["content"])
     return [{"content": chunk, "source": doc["source"]} for chunk in doc_chunks]
 
+allowed_ext = {".pdf", ".docx", ".txt", ".md"}
+
+files_in_documents = [
+    p for p in Path(output_folder).glob("*")
+    if p.suffix.lower() in allowed_ext
+]
 all_processed_docs = []
+
 for file_path in files_in_documents:
     try:
         print(f"Обработка документа: {file_path} ...")
@@ -43,6 +50,8 @@ for file_path in files_in_documents:
 
 all_chunks = []
 previous_chunks_num = 0
+
+
 for doc in all_processed_docs:
     doc_chunks = split_into_chunks(doc, text_splitter)
     all_chunks.extend(doc_chunks)

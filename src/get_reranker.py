@@ -20,11 +20,16 @@ class Reranker:
                 )
                 print("Реранкер загружен из локального кэша.")
             except OSError:
-                print("Локально реранкер не найден. Загрузка из Hugging Face...")
-                cls._instance = CrossEncoder(
-                    "cross-encoder/ms-marco-MiniLM-L-6-v2",
-                    cache_folder=str(root_project / 'model'),
-                    local_files_only=False
-                )
+                try:
+                    print("Локально реранкер не найден. Загрузка из Hugging Face...")
+                    cls._instance = CrossEncoder(
+                        "cross-encoder/ms-marco-MiniLM-L-6-v2@main",
+                        cache_folder=str(root_project / 'model'),
+                        local_files_only=False
+                    )
+                except Exception as e:
+                    print("Не удалось загрузить реранкер:", e)
+                    raise RuntimeError("Reranker initialization failed")
+
                 print("Реранкер загружен и сохранен локально.")
         return cls._instance

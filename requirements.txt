@@ -5,7 +5,8 @@ langchain-ollama
 langchain-text-splitters
 sentence-transformers
 markitdown
+markitdown[all]
 torch
 pypdf
 python-docx
-
+networkx

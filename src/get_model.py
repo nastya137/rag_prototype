@@ -19,12 +19,16 @@ class Model:
                     local_files_only=True)
                 print("Модель загружена из локального кэша.")
             except OSError:
-                print("Локально модель не найдена. Загрузка из Hugging Face...")
-                cls._instance = SentenceTransformer(
-                    'multi-qa-mpnet-base-dot-v1',
-                    cache_folder=str(model_cache_dir),
-                    local_files_only=False,
-                )
+                try:
+                    print("Локально модель не найдена. Загрузка из Hugging Face...")
+                    cls._instance = SentenceTransformer(
+                        'multi-qa-mpnet-base-dot-v1',
+                        cache_folder=str(model_cache_dir),
+                        local_files_only=False,
+                    )
+                except Exception as e:
+                    print("Ошибка загрузки модели:", e)
+                    raise RuntimeError("Embedding model initialization failed")
 
                 print("Модель загружена и сохранена локально.")
         return cls._instance
