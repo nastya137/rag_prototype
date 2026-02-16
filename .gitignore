@@ -8,3 +8,4 @@ src/__pycache__
 *.pyc
 .idea/
 .venv/
+graph.json
