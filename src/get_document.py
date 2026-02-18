@@ -16,8 +16,8 @@ files_in_documents = list(Path(output_folder).glob('*'))
 # Чанкирование и подготовка данных
 md = MarkItDown()
 text_splitter = RecursiveCharacterTextSplitter(
-    chunk_size=600,
-    chunk_overlap=120,
+    chunk_size=750,
+    chunk_overlap=150,
     separators=["\n\n", "\n", ". ", " ", ""]
 )
 def process_document(file_path):
@@ -81,8 +81,7 @@ for doc_id, doc in enumerate(all_processed_docs):
 
 # Получение эмбеддингов
 print(f"Генерация эмбеддингов...")
-model = get_model.Model.get_instance()
-embeddings = model.encode(documents)
+embeddings = get_model.Model.encode_passages(documents)
 
 print(f"Результат генерации эмбеддингов:")
 print(f"  - Форма эмбеддинга: {embeddings.shape}")
@@ -92,18 +91,15 @@ print(f"  - Измерений векторов: {embeddings.shape[1]}")
 root_project = Path(__file__).absolute().parents[1]
 client = chromadb.PersistentClient(path=root_project / "chroma_db")
 
+try:
+    client.delete_collection("collection_1")
+except:
+    pass
+
 collection = client.get_or_create_collection(
     name="collection_1",
     metadata={"description": "Тестовая коллекция"}
 )
-
-if collection.count() > 0:
-    print("Коллекция уже содержит данные. Пересоздание...")
-    client.delete_collection("collection_1")
-    collection = client.get_or_create_collection(
-        name="collection_1",
-        metadata={"description": "Тестовая коллекция"}
-    )
 
 print(f"Создана коллекция: {collection.name}")
 print(f"ID коллекции: {collection.id}")

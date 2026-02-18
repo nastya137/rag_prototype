@@ -1,7 +1,7 @@
 from sentence_transformers import SentenceTransformer
 import os
 from pathlib import Path
-
+model_name = "intfloat/multilingual-e5-base"
 class Model:
     _instance = None
     @classmethod
@@ -14,7 +14,7 @@ class Model:
             os.environ["TRANSFORMERS_CACHE"] = str(model_cache_dir)
             try:
                 cls._instance = SentenceTransformer(
-                    'multi-qa-mpnet-base-dot-v1',
+                    model_name,
                     cache_folder=str(model_cache_dir),
                     local_files_only=True)
                 print("Модель загружена из локального кэша.")
@@ -22,7 +22,7 @@ class Model:
                 try:
                     print("Локально модель не найдена. Загрузка из Hugging Face...")
                     cls._instance = SentenceTransformer(
-                        'multi-qa-mpnet-base-dot-v1',
+                        model_name,
                         cache_folder=str(model_cache_dir),
                         local_files_only=False,
                     )
@@ -32,3 +32,15 @@ class Model:
 
                 print("Модель загружена и сохранена локально.")
         return cls._instance
+
+    @classmethod
+    def encode_query(cls, texts):
+        model = cls.get_instance()
+        texts = [f"query: {t}" for t in texts]
+        return model.encode(texts, normalize_embeddings=True)
+
+    @classmethod
+    def encode_passages(cls, texts):
+        model = cls.get_instance()
+        texts = [f"passage: {t}" for t in texts]
+        return model.encode(texts, normalize_embeddings=True)

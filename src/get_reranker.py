@@ -14,16 +14,16 @@ class Reranker:
             os.environ["TRANSFORMERS_CACHE"] = str(reranker_cache_dir)
             try:
                 cls._instance = CrossEncoder(
-                    "cross-encoder/ms-marco-MiniLM-L-6-v2",
+                    "cross-encoder/mmarco-mMiniLMv2-L6-H384-v1",
                     cache_folder=str(root_project / 'model'),
                     local_files_only=True
                 )
                 print("Реранкер загружен из локального кэша.")
             except OSError:
                 try:
-                    print("Локально реранкер не найден. Загрузка из Hugging Face...")
+                    print("Локально реранкер не найден. Загрузка...")
                     cls._instance = CrossEncoder(
-                        "cross-encoder/ms-marco-MiniLM-L-6-v2@main",
+                        "cross-encoder/mmarco-mMiniLMv2-L6-H384-v1",
                         cache_folder=str(root_project / 'model'),
                         local_files_only=False
                     )
