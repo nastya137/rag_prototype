@@ -16,11 +16,10 @@ files_in_documents = list(Path(output_folder).glob('*'))
 # Чанкирование и подготовка данных
 md = MarkItDown()
 text_splitter = RecursiveCharacterTextSplitter(
-    chunk_size=450,
-    chunk_overlap=90,
+    chunk_size=600,
+    chunk_overlap=120,
     separators=["\n\n", "\n", ". ", " ", ""]
 )
-
 def process_document(file_path):
     result = md.convert(file_path)
     content = result.text_content

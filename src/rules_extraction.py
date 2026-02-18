@@ -10,6 +10,8 @@ RULE_TRIGGERS = [
 ]
 
 RULE_TYPES = {
+    "включать": "structure",
+    "структурные элементы": "structure",
     "шрифт": "font",
     "размер": "font_size",
     "пт": "font_size",
@@ -18,6 +20,7 @@ RULE_TYPES = {
     "мм": "margins",
     "нумер": "numbering",
     "располаг": "layout",
+    "выравнив": "layout",
     "оформля": "formatting",
 }
 
@@ -57,6 +60,8 @@ def extract_rules_from_chunk(chunk_text, chunk_id, elements):
     for rule in raw_rules:
         rule_type = detect_rule_type(rule)
         elems = elements_extraction.detect_elements(rule, elements)
+        if not elems and rule_type in ["formatting", "font", "margins", "line_spacing"]:
+            continue
 
         extracted.append({
             "rule_id": f"rule_{chunk_id}_{abs(hash(rule)) % 10000}",
