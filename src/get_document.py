@@ -30,7 +30,7 @@ def split_into_chunks(doc, text_splitter):
     doc_chunks = text_splitter.split_text(doc["content"])
     return [{"content": chunk, "source": doc["source"]} for chunk in doc_chunks]
 
-allowed_ext = {".pdf", ".docx", ".txt", ".md"}
+allowed_ext = {".pdf", ".docx", ".txt"}
 
 files_in_documents = [
     p for p in Path(output_folder).glob("*")

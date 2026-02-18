@@ -2,6 +2,8 @@ from sentence_transformers import CrossEncoder
 import os
 from pathlib import Path
 
+model_name = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+
 class Reranker:
     _instance = None
     @classmethod
@@ -14,7 +16,7 @@ class Reranker:
             os.environ["TRANSFORMERS_CACHE"] = str(reranker_cache_dir)
             try:
                 cls._instance = CrossEncoder(
-                    "cross-encoder/mmarco-mMiniLMv2-L6-H384-v1",
+                    model_name,
                     cache_folder=str(root_project / 'model'),
                     local_files_only=True
                 )
@@ -23,7 +25,7 @@ class Reranker:
                 try:
                     print("Локально реранкер не найден. Загрузка...")
                     cls._instance = CrossEncoder(
-                        "cross-encoder/mmarco-mMiniLMv2-L6-H384-v1",
+                        model_name,
                         cache_folder=str(root_project / 'model'),
                         local_files_only=False
                     )

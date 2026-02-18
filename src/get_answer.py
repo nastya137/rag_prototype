@@ -11,7 +11,7 @@ reranker = Reranker.get_instance()
 client = chromadb.PersistentClient(path=root_project / "chroma_db")
 model = Model.get_instance()
 collection = client.get_collection(name="collection_1")
-llm = OllamaLLM(model="saiga-mistral", temperature=0.1)
+llm = OllamaLLM(model="mistral", temperature=0.1)
 
 # Шаблон запроса
 prompt_template = PromptTemplate(
@@ -106,7 +106,7 @@ def retrieve_context(question, n_results=15, final_k=5, distance_threshold=0.4):
     return context, chunks
 
 def get_llm_answer(question, context):
-    answer = chain.invoke({"context": context[:2000], "question": question})
+    answer = chain.invoke({"context": context[:1000], "question": question})
     return answer
 
 def format_response(question, answer, source_chunks):
