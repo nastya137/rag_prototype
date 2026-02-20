@@ -18,7 +18,7 @@ prompt_template = PromptTemplate(
     input_variables=["context", "question"],
     template="""Ты эксперт в области оформления курсовых проектов и выпускных квалификационных работ. 
     Дай ответ, учитывая доступную тебе информацию из документа и, если указан, ГОСТ по оформлению в области российского образования.
-    В первую очередь предоставляй информацию об оформлении документа, если в вопросе не указано иное.
+    В первую очередь предоставляй информацию об оформлении документа, если в вопросе не указано иное. Если информации не хватает, не придумывай её и не добавляй ту информацию, которая не связана с вопросом.
 
 Documentation:
 {context}
@@ -67,6 +67,12 @@ def retrieve_context(question, n_results=15, final_k=5, distance_threshold=0.4):
     metadatas = results["metadatas"][0]
     distances = results["distances"][0]
 
+    # print(f"\n--- Лучшие чанки до реранкинга ---\n")
+    # for i, (doc, dist) in enumerate(zip(documents[:n_results], distances[:n_results])):
+    #     print(f"{i+1}. {doc[:750]}...")
+    #     print(f"Distance: {dist:.4f}")
+    #     print("---")
+
     filtered = [
         (doc, meta, dist)
         for doc, meta, dist in zip(documents, metadatas, distances)
@@ -80,6 +86,7 @@ def retrieve_context(question, n_results=15, final_k=5, distance_threshold=0.4):
     filtered_metas = [item[1] for item in filtered]
     filtered_dists = [item[2] for item in filtered]
 
+    # Применяем реранкер
     pairs = [(question, doc) for doc in filtered_docs]
     scores = reranker.predict(pairs)
 
@@ -102,6 +109,13 @@ def retrieve_context(question, n_results=15, final_k=5, distance_threshold=0.4):
         })
 
     context = "\n\n---SECTION---\n\n".join(context_docs)
+
+    # print(f"\n--- Лучшие чанки после реранкинга ---\n")
+    # for i, chunk in enumerate(chunks):
+    #     print(f"{i+1}. {chunk['text'][:750]}...")
+    #     print(f"Distance: {chunk['distance']:.4f}")
+    #     print(f"Score: {chunk['score']:.4f}")
+    #     print("---")
 
     return context, chunks
 
