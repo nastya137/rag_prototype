@@ -10,3 +10,4 @@ torch
 pypdf
 python-docx
 networkx
+neo4j

@@ -1,69 +1,122 @@
-import networkx as nx
+from neo4j import GraphDatabase
 from pathlib import Path
-import json
-import chromadb
-import elements_hardcode
-from rules_extraction import extract_rules_from_chunk
+from typing import List, Dict
+from get_qdrant_client import QdrantClientSingleton
+import os
 
+NEO4J_URI = "bolt://localhost:7687"
+NEO4J_USER = "neo4j"
+NEO4J_PASSWORD = "password"
 
-def build_graph_from_chroma():
+class GraphClient:
+    def __init__(self, uri, user, password):
+        self.driver = GraphDatabase.driver(uri, auth=(user, password))
+
+    def close(self):
+        self.driver.close()
+
+    def run(self, query, **params):
+        with self.driver.session() as session:
+            return session.run(query, params)
+
+KEYWORDS = [
+    "ГОСТ", "таблица", "рисунок", "шрифт",
+    "межстрочный интервал", "поля", "нумерация", "список литературы",
+    "приложение", "оформление", "введение", "основная часть",
+    "заключение", "иллюстрации", "размер шрифта", "поля",
+    "титульный лист", "реферат", "список использованных источников"
+]
+
+def extract_entities(text: str) -> List[str]:
+    found = []
+    lower = text.lower()
+    for kw in KEYWORDS:
+        if kw.lower() in lower:
+            found.append(kw)
+    return list(set(found))
+
+def init_schema(graph: GraphClient):
+    graph.run("CREATE CONSTRAINT IF NOT EXISTS FOR (d:Document) REQUIRE d.name IS UNIQUE")
+    graph.run("CREATE CONSTRAINT IF NOT EXISTS FOR (c:Chunk) REQUIRE c.id IS UNIQUE")
+    graph.run("CREATE CONSTRAINT IF NOT EXISTS FOR (e:Entity) REQUIRE e.name IS UNIQUE")
+
+def save_chunk(
+    graph: GraphClient,
+    doc_name: str,
+    chunk_id: str,
+    text: str,
+    entities: List[str]
+):
+    graph.run("""
+    MERGE (d:Document {name: $doc_name})
+    MERGE (c:Chunk {id: $chunk_id})
+    SET c.text = $text
+    MERGE (d)-[:HAS_CHUNK]->(c)
+    """, doc_name=doc_name, chunk_id=chunk_id, text=text)
+
+    for ent in entities:
+        graph.run("""
+        MERGE (e:Entity {name: $entity})
+        WITH e
+        MATCH (c:Chunk {id: $chunk_id})
+        MERGE (c)-[:MENTIONS]->(e)
+        """, entity=ent, chunk_id=chunk_id)
+
+def build_graph_from_chunks(chunks: List[Dict]):
+    graph = GraphClient(NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD)
+    init_schema(graph)
+
+    for chunk in chunks:
+        doc_name = chunk["metadata"]["document"]
+        chunk_id = f'{chunk["metadata"]["doc_id"]}_{chunk["metadata"]["chunk_id"]}'
+        text = chunk["text"]
+
+        entities = extract_entities(text)
+
+        save_chunk(graph, doc_name, chunk_id, text, entities)
+
+    graph.close()
+
+def load_chunks_from_qdrant(collection_name: str):
     root_project = Path(__file__).absolute().parents[1]
-    client = chromadb.PersistentClient(path=root_project / "chroma_db")
-    collection = client.get_collection(name="collection_1")
+    client = QdrantClientSingleton.get_instance()
 
-    G = nx.DiGraph()
+    chunks = []
+    offset = None
 
-    all_data = collection.get(include=["documents", "metadatas"])
-
-    documents = all_data["documents"]
-    metadatas = all_data["metadatas"]
-
-    for doc, meta in zip(documents, metadatas):
-        chunk_id = f"chunk_{meta['doc_id']}_{meta['chunk_id']}"
-        document_name = meta.get("document", "Unknown")
-        G.add_node(
-            chunk_id,
-            type="Chunk",
-            document=document_name,
-        )
-        rules = extract_rules_from_chunk(
-            chunk_text=doc,
-            chunk_id=chunk_id,
-            elements=elements_hardcode.elements
+    while True:
+        points, offset = client.scroll(
+            collection_name=collection_name,
+            limit=100,
+            with_payload=True,
+            with_vectors=False,
+            offset=offset
         )
 
-        for rule in rules:
-            rule_id = rule["rule_id"]
-            G.add_node(
-                rule_id,
-                type="Rule",
-                text=rule["text"],
-                rule_type=rule["type"]
-            )
-            G.add_edge(chunk_id, rule_id, type="contains_rule")
-            for elem in rule["elements"]:
-                elem_id = f"element_{elem}"
+        if not points:
+            break
 
-                G.add_node(
-                    elem_id,
-                    type="Element",
-                    name=elem
-                )
+        for p in points:
+            chunks.append({
+                "text": p.payload.get("text", ""),
+                "metadata": {
+                    "document": p.payload.get("document"),
+                    "doc_id": p.payload.get("doc_id"),
+                    "chunk_id": p.payload.get("chunk_id")
+                }
+            })
 
-                G.add_edge(rule_id, elem_id, type="applies_to")
+        if offset is None:
+            break
 
-    return G
-
-
-def save_graph(G, path="graph.json"):
-    data = nx.node_link_data(G)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-
+    client.close()
+    return chunks
 
 if __name__ == "__main__":
-    G = build_graph_from_chroma()
-    print(f"Граф построен: {G.number_of_nodes()} узлов, {G.number_of_edges()} рёбер")
-    root_project = Path(__file__).absolute().parents[1]
-    save_graph(G, root_project/"graph.json")
-    print("Граф сохранён в graph.json")
+    print("Построение графа знаний...")
+
+    chunks = load_chunks_from_qdrant("collection_1")
+    print(f"Загружено чанков из Qdrant: {len(chunks)}")
+
+    build_graph_from_chunks(chunks)
+    print("Граф построен.")
