@@ -1,5 +1,5 @@
 model/
-chroma_db/
+qdrant_db/
 documents/*.pdf
 documents/*.docx
 documents/*.doc

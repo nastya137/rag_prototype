@@ -4,7 +4,10 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from collections import Counter
 import os
 import get_model
-import chromadb
+from qdrant_client import QdrantClient
+from qdrant_client.models import VectorParams, Distance, PointStruct
+import uuid
+from get_qdrant_client import QdrantClientSingleton
 
 #Получение пути к документам
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -16,7 +19,7 @@ files_in_documents = list(Path(output_folder).glob('*'))
 # Чанкирование и подготовка данных
 md = MarkItDown()
 text_splitter = RecursiveCharacterTextSplitter(
-    chunk_size=750,
+    chunk_size=600,
     chunk_overlap=150,
     separators=["\n\n", "\n", ". ", " ", ""]
 )
@@ -87,28 +90,45 @@ print(f"Результат генерации эмбеддингов:")
 print(f"  - Форма эмбеддинга: {embeddings.shape}")
 print(f"  - Измерений векторов: {embeddings.shape[1]}")
 
-#Построение базы знаний (ChromaDB)
+#Построение базы знаний (Qdrant)
 root_project = Path(__file__).absolute().parents[1]
-client = chromadb.PersistentClient(path=root_project / "chroma_db")
+client = QdrantClientSingleton.get_instance()
 
 try:
     client.delete_collection("collection_1")
 except:
     pass
 
-collection = client.get_or_create_collection(
-    name="collection_1",
-    metadata={"description": "Тестовая коллекция"}
+collection_name = "collection_1"
+
+client.create_collection(
+    collection_name=collection_name,
+    vectors_config=VectorParams(size=embeddings.shape[1], distance=Distance.COSINE)
 )
 
-print(f"Создана коллекция: {collection.name}")
-print(f"ID коллекции: {collection.id}")
+print(f"Создана коллекция: {collection_name}")
 
-collection.add(
-    documents=documents,
-    embeddings=embeddings.tolist(),
-    metadatas=metadatas,
-    ids=ids
+points = []
+
+for idx, (vector, text, meta) in enumerate(zip(embeddings, documents, metadatas)):
+    points.append(
+        PointStruct(
+            id=str(uuid.uuid4()),
+            vector=vector.tolist(),
+            payload={
+                "text": text,
+                **meta,
+                "node_type": "chunk"
+            }
+        )
+    )
+
+client.upsert(
+    collection_name=collection_name,
+    points=points
 )
 
-print(f"Collection count: {collection.count()}")
+print(f"Всего в коллекции: {client.get_collection(collection_name).points_count}")
+
+client.close()
+

@@ -1,4 +1,4 @@
-chromadb
+qdrant-client
 langchain
 langchain-core
 langchain-ollama
