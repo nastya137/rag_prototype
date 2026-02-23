@@ -1,124 +1,145 @@
-import json
-import networkx as nx
+from neo4j import GraphDatabase
+from langchain_ollama import OllamaLLM
+from langchain_core.prompts import PromptTemplate
+from get_model import Model
+from get_reranker import Reranker
 import re
-from pathlib import Path
+import os
+from dotenv import load_dotenv
+from entity_rules import ENTITY_RULES
+
+load_dotenv()
+
+NEO4J_URI = os.getenv("NEO4J_URI")
+NEO4J_USER = os.getenv("NEO4J_USER")
+NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
+
+reranker = Reranker.get_instance()
+model = Model.get_instance()
+llm = OllamaLLM(model="mistral", temperature=0.1)
+
+prompt_template = PromptTemplate(
+    input_variables=["context", "question"],
+    template="""Ты эксперт в области оформления курсовых проектов и выпускных квалификационных работ. 
+Дай ответ, учитывая доступную тебе информацию из документа и, если указан, ГОСТ по оформлению в области российского образования.
+В первую очередь предоставляй информацию об оформлении документа, если в вопросе не указано иное. Если информации не хватает, не придумывай её и не добавляй ту информацию, которая не связана с вопросом.
+
+Documentation:
+{context}
+
+Question: {question}
+
+Answer (уточняй, приводи конкретные цифры и значения, когда это возможно):"""
+)
+
+chain = prompt_template | llm
 
 
-def load_graph(path="graph.json"):
-    with open(path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    return nx.node_link_graph(data)
 
 
-def normalize(text: str) -> str:
-    return re.sub(r"[^\w\s]", " ", text.lower())
+
+def extract_entities_from_question(question: str):
+    q = question.lower()
+    found = []
+
+    for entity, patterns in ENTITY_RULES.items():
+        for pattern in patterns:
+            if re.search(pattern, q):
+                found.append(entity)
+                break
+
+    return list(set(found))
 
 
-INTENT_KEYWORDS = {
-    "font": ["шрифт"],
-    "font_size": ["размер шрифта", "кегль", "пт"],
-    "margins": ["поля", "мм"],
-    "line_spacing": ["интервал", "межстроч"],
-    "numbering": ["нумерац", "нумер"],
-    "layout": ["располож", "размещ"],
-    "formatting": ["оформлен", "оформля"],
-}
+def retrieve_context_from_graph(question, final_k=5):
+    driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
 
-ELEMENT_KEYWORDS = {
-    "Иллюстрации": ["рисунк", "иллюстрац"],
-    "Таблицы": ["таблиц"],
-    "Формулы и уравнения": ["формул", "уравнен"],
-    "Титульный лист": ["титуль"],
-    "Содержание": ["содержан"],
-    "Список использованных источников": ["литератур", "источник"],
-    "Ссылки": ["ссылк"],
-}
+    entities = extract_entities_from_question(question)
 
+    if not entities:
+        return "", []
 
-def detect_intent(question: str):
-    q = normalize(question)
-    for intent, keys in INTENT_KEYWORDS.items():
-        if any(k in q for k in keys):
-            return intent
-    return None
+    query = """
+    MATCH (c:Chunk)-[:MENTIONS]->(e:Entity)
+    WHERE e.name IN $entities
+    RETURN c.text AS text, e.name AS entity, c.id AS chunk_id
+    LIMIT 50
+    """
 
+    chunks = []
 
-def detect_element_from_question(question: str):
-    q = normalize(question)
-    for elem, keys in ELEMENT_KEYWORDS.items():
-        if any(k in q for k in keys):
-            return elem
-    return None
+    with driver.session() as session:
+        results = session.run(query, entities=entities)
+        for r in results:
+            chunks.append({
+                "text": r["text"],
+                "metadata": {
+                    "entity": r["entity"],
+                    "chunk_id": r["chunk_id"]
+                }
+            })
 
+    driver.close()
 
-def answer_from_graph(G, question: str):
-    intent = detect_intent(question)
-    element = detect_element_from_question(question)
+    if not chunks:
+        return "", []
 
-    print(f"\nВопрос: {question}")
-    print(f"intent: {intent}")
-    print(f"element: {element}\n")
+    docs = [c["text"] for c in chunks]
 
-    rules = []
+    pairs = [(question, doc) for doc in docs]
+    scores = reranker.predict(pairs)
 
-    for node, data in G.nodes(data=True):
-        if data.get("type") != "Rule":
-            continue
+    ranked = sorted(
+        zip(chunks, scores),
+        key=lambda x: x[1],
+        reverse=True
+    )[:final_k]
 
-        if intent and data.get("rule_type") != intent:
-            continue
+    context_docs = [item[0]["text"] for item in ranked]
 
-        rules.append((node, data))
+    final_chunks = []
+    for item, score in ranked:
+        final_chunks.append({
+            "text": item["text"],
+            "metadata": item["metadata"],
+            "score": float(score)
+        })
 
-    if element:
-        rules = [
-            (rule_id, rule_data)
-            for rule_id, rule_data in rules
-            if any(
-                G.nodes[nbr].get("name") == element
-                for nbr in G.neighbors(rule_id)
-                if G.edges[rule_id, nbr].get("type") == "applies_to"
-            )
-        ]
+    context = "\n\n---SECTION---\n\n".join(context_docs)
 
-    if not rules:
-        print("По графу ничего не найдено")
-        return
-
-    print("Найдены правила:\n")
-
-    for i, (rule_id, rule_data) in enumerate(rules, 1):
-        print(f"{i}. {rule_data['text']}")
-        print(f"   Тип: {rule_data['rule_type']}")
-
-        elems = [
-            G.nodes[nbr]["name"]
-            for nbr in G.neighbors(rule_id)
-            if G.nodes[nbr].get("type") == "Element"
-        ]
-
-        print(f"   Элементы: {', '.join(elems) if elems else '—'}")
-
-        chunks = [
-            nbr for nbr in G.predecessors(rule_id)
-            if G.nodes[nbr].get("type") == "Chunk"
-        ]
-
-        print("   Источники:")
-        for ch in chunks:
-            doc = G.nodes[ch].get("document")
-            print(f"    - {doc} ({ch})")
-
-        print("-" * 60)
+    return context, final_chunks
 
 
-if __name__ == "__main__":
-    root_project = Path(__file__).absolute().parents[1]
-    graph = load_graph(root_project / "graph.json")
+def get_llm_answer(question, context):
+    return chain.invoke({"context": context[:1500], "question": question})
 
-    while True:
-        q = input("\nВведите вопрос (или 'стоп'): ")
-        if q.lower() == "стоп":
-            break
 
-        answer_from_graph(graph, q)
+def format_response(answer, source_chunks):
+    response = f"{answer}\n\nИсточники (граф знаний):\n"
+    for i, chunk in enumerate(source_chunks, 1):
+        preview = chunk["text"][:300].replace("\n", " ") + "..."
+        entity = chunk["metadata"].get("entity", "Unknown")
+        response += (
+            f"{i}. Сущность: {entity}\n"
+            f"   Score: {chunk['score']:.4f}\n"
+            f"   Текст: {preview}\n\n"
+        )
+    return response
+
+
+def enhanced_query_with_llm(question):
+    context, chunks = retrieve_context_from_graph(question)
+    answer = get_llm_answer(question, context)
+    return format_response(answer, chunks)
+
+
+while True:
+    question = input("\nВведите вопрос: ")
+    if question.lower() == "стоп":
+        break
+
+    try:
+        enhanced_response = enhanced_query_with_llm(question)
+        print(enhanced_response)
+    except Exception as e:
+        print("Ошибка при выполнении запроса:", e)

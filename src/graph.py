@@ -1,41 +1,56 @@
+import time
 from neo4j import GraphDatabase
 from pathlib import Path
 from typing import List, Dict
+from neo4j.exceptions import ServiceUnavailable
 from get_qdrant_client import QdrantClientSingleton
+import re
 import os
+from dotenv import load_dotenv
+from entity_rules import ENTITY_RULES
 
-NEO4J_URI = "bolt://localhost:7687"
-NEO4J_USER = "neo4j"
-NEO4J_PASSWORD = "password"
+load_dotenv()
+
+NEO4J_URI = os.getenv("NEO4J_URI")
+NEO4J_USER = os.getenv("NEO4J_USER")
+NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
 
 class GraphClient:
     def __init__(self, uri, user, password):
-        self.driver = GraphDatabase.driver(uri, auth=(user, password))
+        self.driver = GraphDatabase.driver(
+            uri,
+            auth=(user, password),
+            max_connection_lifetime=300,
+            connection_timeout=30
+        )
 
     def close(self):
         self.driver.close()
 
     def run(self, query, **params):
-        with self.driver.session() as session:
-            return session.run(query, params)
+        for attempt in range(5):
+            try:
+                with self.driver.session() as session:
+                    return session.run(query, params)
+            except ServiceUnavailable as e:
+                print(f"Neo4j connection lost, retry {attempt + 1}/5...")
+                time.sleep(2)
+        raise RuntimeError("Neo4j connection failed after retries")
 
-KEYWORDS = [
-    "ГОСТ", "таблица", "рисунок", "шрифт",
-    "межстрочный интервал", "поля", "нумерация", "список литературы",
-    "приложение", "оформление", "введение", "основная часть",
-    "заключение", "иллюстрации", "размер шрифта", "поля",
-    "титульный лист", "реферат", "список использованных источников"
-]
-
-def extract_entities(text: str) -> List[str]:
+def extract_entities(text: str):
+    text = text.lower()
     found = []
-    lower = text.lower()
-    for kw in KEYWORDS:
-        if kw.lower() in lower:
-            found.append(kw)
+
+    for entity, patterns in ENTITY_RULES.items():
+        for pattern in patterns:
+            if re.search(pattern, text):
+                found.append(entity)
+                break
+
     return list(set(found))
 
 def init_schema(graph: GraphClient):
+    graph.run("MATCH (n) DETACH DELETE n")
     graph.run("CREATE CONSTRAINT IF NOT EXISTS FOR (d:Document) REQUIRE d.name IS UNIQUE")
     graph.run("CREATE CONSTRAINT IF NOT EXISTS FOR (c:Chunk) REQUIRE c.id IS UNIQUE")
     graph.run("CREATE CONSTRAINT IF NOT EXISTS FOR (e:Entity) REQUIRE e.name IS UNIQUE")

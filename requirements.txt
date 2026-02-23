@@ -4,10 +4,11 @@ langchain-core
 langchain-ollama
 langchain-text-splitters
 sentence-transformers
-markitdown
+markitdown~=0.1.4
 markitdown[all]
 torch
 pypdf
 python-docx
 networkx
-neo4j
+neo4j~=6.1.0
+python-dotenv~=1.2.1

@@ -10,3 +10,4 @@ src/__pycache__
 .venv/
 graph.json
 *~.xlsx
+.env
