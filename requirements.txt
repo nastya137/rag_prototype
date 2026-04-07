@@ -12,3 +12,7 @@ python-docx
 networkx
 neo4j~=6.1.0
 python-dotenv~=1.2.1
+pdfplumber~=0.11.9
+replicate~=1.0.7
+pymorphy3~=2.0.6
+pillow~=12.1.1
